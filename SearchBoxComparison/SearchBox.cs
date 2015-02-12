@@ -2,15 +2,17 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Collections.Concurrent;
 
 namespace SearchBoxComparison
 {
     internal class SearchBox : TextBox
     {
         string _lastSearch;
-
+        TaskHandler TaskHandler = new TaskHandler();
         public SearchBox()
         {
             TextChanged += new ThrottledEventHandler(
@@ -30,18 +32,89 @@ namespace SearchBoxComparison
 
             _lastSearch = text;
 
-            var result = await Service.Search(text);
+            TaskHandler.Add(text);
 
-
-            Console.WriteLine(result);
         }
     }
 
-    public class ThrottledEventHandler
+    internal class TaskHandler
+    {
+        ConcurrentQueue<Task<string>> Tasks { get; set; }
+        Task LastTask { get; set; }
+        CancellationTokenSource CurrentSource { get; set; }
+        CancellationTokenSource HandleSource { get; set; }
+        public TaskHandler()
+        {
+            Tasks = new ConcurrentQueue<Task<string>>();
+            CurrentSource = new CancellationTokenSource();
+        }
+
+        internal void Add(string text)
+        {
+            if (HandleSource != null)
+                HandleSource.Cancel();
+
+            var task = Task.Run(() => Service.Search(text), CurrentSource.Token);
+            Add(task);
+        }
+
+        internal void Add(Task<string> task)
+        {
+            Tasks.Enqueue(task);
+            LastTask = task;
+            Restart();
+        }
+
+        private void Restart()
+        {
+            if (HandleSource != null)
+            {
+                HandleSource = null;
+            }
+
+            HandleSource = new CancellationTokenSource();
+            Task.Run(() => Handle(HandleSource), HandleSource.Token);
+        }
+
+        private void Handle(CancellationTokenSource source)
+        {
+            Console.WriteLine("Started");
+            while (true)
+            {
+                if (source.IsCancellationRequested)
+                    return;
+
+                var tasks = Tasks.ToArray();
+                var index = Task.WaitAny(tasks);
+                if (index > -1)
+                {
+                    Task<string> result = null;
+                    while (!source.IsCancellationRequested && Tasks.TryDequeue(out result) && !tasks[index].Equals(result)) { }
+                    if (source.IsCancellationRequested)
+                        return;
+                    if (tasks[index].IsCanceled)
+                        return;
+
+                    if (tasks[index].Equals(LastTask))
+                    {
+                        CurrentSource.Cancel();
+                        CurrentSource.Dispose();
+                        CurrentSource = new CancellationTokenSource();
+                        Console.WriteLine(tasks[index].Result);
+                        return;
+                    }
+
+                    Console.WriteLine(tasks[index].Result);
+                }
+            }
+        }
+    }
+
+    internal class ThrottledEventHandler
     {
         private readonly EventHandler<EventArgs> _innerHandler;
         private readonly EventHandler _outerHandler;
-        private readonly Timer _throttleTimer;
+        private readonly System.Windows.Forms.Timer _throttleTimer;
 
         private readonly object _throttleLock = new object();
         private Action _delayedHandler = null;
@@ -50,7 +123,7 @@ namespace SearchBoxComparison
         {
             _innerHandler = handler;
             _outerHandler = HandleIncomingEvent;
-            _throttleTimer = new Timer() { Interval = (int)delay.TotalMilliseconds };
+            _throttleTimer = new System.Windows.Forms.Timer() { Interval = (int)delay.TotalMilliseconds };
             _throttleTimer.Tick += Timer_Tick;
         }
 

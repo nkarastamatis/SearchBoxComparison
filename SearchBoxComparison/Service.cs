@@ -10,8 +10,8 @@ namespace SearchBoxComparison
     {
         internal static async Task<string> Search(string text)
         {
-            if (text == "long")
-                await Task.Delay(10000);
+            if (text == "long" || text == "long2")
+                await Task.Delay(20000);
 
             if (text == "error")
                 throw new Exception("Search error.");

@@ -16,7 +16,7 @@ namespace SearchBoxComparison
         {
             SearchResults
                 .Subscribe(
-                    onNext: result => Console.WriteLine(result));
+                    onNext: result => Console.WriteLine("Reactive: {0}", result));
         }
 
         public IObservable<string> SearchResults

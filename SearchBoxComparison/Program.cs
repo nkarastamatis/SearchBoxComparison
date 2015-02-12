@@ -11,23 +11,20 @@ namespace SearchBoxComparison
     {
         static void Main(string[] args)
         {
-            var txtBox = new ReactiveSearchBox() { BorderStyle = BorderStyle.None };
+            var txtBox = new ReactiveSearchBox() 
+            { 
+                BorderStyle = BorderStyle.None 
+            };
             var searchBox = new SearchBox()
             {
                 BorderStyle = BorderStyle.None,
                 Left = txtBox.Right + 5
             };
+
             var form = new Form() { };
             form.Controls.Add(txtBox);
             form.Controls.Add(searchBox);
             form.ShowDialog();
         }
-
-        
-       
-
-
-
-        
     }
 }
