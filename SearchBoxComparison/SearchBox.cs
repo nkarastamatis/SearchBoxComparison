@@ -50,83 +50,27 @@ namespace SearchBoxComparison
             // Set the lastSearch for checking the next time around.
             _lastSearch = text;
 
-            TaskHandler.Add(text);
+            if (_cancellationTokenSource != null)
+                _cancellationTokenSource.Cancel();
+
+            _cancellationTokenSource = new CancellationTokenSource();
+            var token = _cancellationTokenSource.Token;
+
+            var task = Task.Run(() => Service.Search(text), token);
+
+            task.ContinueWith(UpdateSearchResults,
+                token,
+                TaskContinuationOptions.NotOnCanceled,
+                TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        private void UpdateSearchResults(Task<string> task)
+        {
+            Console.WriteLine(task.Result);
         }
 
         string _lastSearch;
-        TaskHandler TaskHandler = new TaskHandler();
+        CancellationTokenSource _cancellationTokenSource;
         public System.Windows.Forms.Timer ThrottleTimer { get; set; }
-    }
-
-    internal class TaskHandler
-    {
-        ConcurrentQueue<Task<string>> Tasks { get; set; }
-        Task LastTask { get; set; }
-        CancellationTokenSource CurrentSource { get; set; }
-        CancellationTokenSource HandleSource { get; set; }
-        public TaskHandler()
-        {
-            Tasks = new ConcurrentQueue<Task<string>>();
-            CurrentSource = new CancellationTokenSource();
-        }
-
-        internal void Add(string text)
-        {
-            if (HandleSource != null)
-                HandleSource.Cancel();
-
-            var task = Task.Run(() => Service.Search(text), CurrentSource.Token);
-            Add(task);
-        }
-
-        internal void Add(Task<string> task)
-        {
-            Tasks.Enqueue(task);
-            LastTask = task;
-            Restart();
-        }
-
-        private void Restart()
-        {
-            if (HandleSource != null)
-            {
-                HandleSource = null;
-            }
-
-            HandleSource = new CancellationTokenSource();
-            Task.Run(() => Handle(HandleSource), HandleSource.Token);
-        }
-
-        private void Handle(CancellationTokenSource source)
-        {
-            while (true)
-            {
-                if (source.IsCancellationRequested)
-                    return;
-
-                var tasks = Tasks.ToArray();
-                var index = Task.WaitAny(tasks);
-                if (index > -1)
-                {
-                    Task<string> result = null;
-                    while (!source.IsCancellationRequested && Tasks.TryDequeue(out result) && !tasks[index].Equals(result)) { }
-                    if (source.IsCancellationRequested)
-                        return;
-                    if (tasks[index].IsCanceled)
-                        return;
-
-                    if (tasks[index].Equals(LastTask))
-                    {
-                        CurrentSource.Cancel();
-                        CurrentSource.Dispose();
-                        CurrentSource = new CancellationTokenSource();
-                        Console.WriteLine(tasks[index].Result);
-                        return;
-                    }
-
-                    Console.WriteLine(tasks[index].Result);
-                }
-            }
-        }
     }
 }
