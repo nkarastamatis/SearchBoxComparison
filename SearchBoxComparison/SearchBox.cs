@@ -11,30 +11,51 @@ namespace SearchBoxComparison
 {
     internal class SearchBox : TextBox
     {
-        string _lastSearch;
-        TaskHandler TaskHandler = new TaskHandler();
         public SearchBox()
         {
-            TextChanged += new ThrottledEventHandler(
-                txtBox_TextChanged, 
-                TimeSpan.FromSeconds(.5));
+            TextChanged += SearchBox_TextChanged;
+            ThrottleTimer = new System.Windows.Forms.Timer();
+            ThrottleTimer.Stop();
+            ThrottleTimer.Interval = 500;
+            ThrottleTimer.Tick += ThrottleTimer_Tick;
         }
 
-        private async void txtBox_TextChanged(object sender, EventArgs e)
+        private void SearchBox_TextChanged(object sender, EventArgs e)
         {
-            var text = ((TextBox)sender).Text;
+            // Using this event handler to reset the timer so the Search
+            // only occurs if the user stopped typing. 
+            // The function has usless objects passed in, but you have to 
+            // use this signiture to register for the event. 
+
+            ThrottleTimer.Stop();
+            ThrottleTimer.Start();
+        }
+
+        void ThrottleTimer_Tick(object sender, EventArgs e)
+        {
+            // Using this event handler to fire off a Task to 
+            // search using the text in the TextBox.
+
+            var text = this.Text;
 
             if (String.IsNullOrWhiteSpace(text))
                 return;
 
+            // If we are in here with the same text as before
+            // we dont want to ask for the same results and
+            // waste resources.
             if (_lastSearch == text)
                 return;
 
+            // Set the lastSearch for checking the next time around.
             _lastSearch = text;
 
             TaskHandler.Add(text);
-
         }
+
+        string _lastSearch;
+        TaskHandler TaskHandler = new TaskHandler();
+        public System.Windows.Forms.Timer ThrottleTimer { get; set; }
     }
 
     internal class TaskHandler
@@ -78,7 +99,6 @@ namespace SearchBoxComparison
 
         private void Handle(CancellationTokenSource source)
         {
-            Console.WriteLine("Started");
             while (true)
             {
                 if (source.IsCancellationRequested)
@@ -107,66 +127,6 @@ namespace SearchBoxComparison
                     Console.WriteLine(tasks[index].Result);
                 }
             }
-        }
-    }
-
-    internal class ThrottledEventHandler
-    {
-        private readonly EventHandler<EventArgs> _innerHandler;
-        private readonly EventHandler _outerHandler;
-        private readonly System.Windows.Forms.Timer _throttleTimer;
-
-        private readonly object _throttleLock = new object();
-        private Action _delayedHandler = null;
-
-        public ThrottledEventHandler(EventHandler<EventArgs> handler, TimeSpan delay)
-        {
-            _innerHandler = handler;
-            _outerHandler = HandleIncomingEvent;
-            _throttleTimer = new System.Windows.Forms.Timer() { Interval = (int)delay.TotalMilliseconds };
-            _throttleTimer.Tick += Timer_Tick;
-        }
-
-        private void HandleIncomingEvent(object sender, EventArgs args)
-        {
-            lock (_throttleLock)
-            {
-                if (_throttleTimer.Enabled)
-                {
-                    _delayedHandler = () => SendEventToHandler(sender, args);
-                }
-                else
-                {
-                    SendEventToHandler(sender, args);
-                }
-            }
-        }
-
-        private void SendEventToHandler(object sender, EventArgs args)
-        {
-            if (_innerHandler != null)
-            {
-                _innerHandler(sender, args);
-                _throttleTimer.Start();
-            }
-        }
-
-        private void Timer_Tick(object sender, EventArgs args)
-        {
-            lock (_throttleLock)
-            {
-                _throttleTimer.Stop();
-                if (_delayedHandler != null)
-                {
-                    _delayedHandler();
-                    _delayedHandler = null;
-                }
-            }
-        }
-
-        public static implicit operator EventHandler(ThrottledEventHandler throttledHandler)
-        {
-            return throttledHandler._outerHandler;
         }
     }
 }
